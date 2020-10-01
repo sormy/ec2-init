@@ -1,6 +1,6 @@
 # ec2-init
 
-Minimalistic init script that is designed for Gentoo Linux with OpenRC to
+Minimalistic init script that is designed for Gentoo Linux with OpenRC/Systemd to
 automatically bootstrap EC2 instances in the way similar to `cloud-init` but
 without Python dependency (and a lot of other modules pulled by `cloud-init`).
 
@@ -17,14 +17,23 @@ This shell script depends on:
 
 All these dependencies are installed by default in Gentoo Linux.
 
-NOTE: This script won't work on Gentoo Linux if `systemd` is used as RC-system.
-
 ## Installation
 
+### OpenRC
+
 ```shell
-curl -s https://raw.githubusercontent.com/sormy/ec2-init/master/ec2-init -o /etc/init.d/ec2-init
+curl -s https://raw.githubusercontent.com/sormy/ec2-init/master/ec2-init.openrc -o /etc/init.d/ec2-init
 chmod +x /etc/init.d/ec2-init
 rc-update add ec2-init boot
+```
+
+### Systemd
+
+```shell
+curl -s https://raw.githubusercontent.com/sormy/ec2-init/master/ec2-init.script /usr/sbin/ec2-init
+chmod +x /usr/sbin/ec2-init
+curl -s https://raw.githubusercontent.com/sormy/ec2-init/master/ec2-init.service /etc/systemd/system/ec2-init.service
+systemctl enable ec2-init
 ```
 
 ## Usage
@@ -88,6 +97,8 @@ Read more about EC2 instance user data:
 While `ec2-init` script has sane defaults, you still have an option to change
 some of them.
 
+## OpenRC
+
 Create file `/etc/conf.d/ec2-init` and override any variables you want.
 
 For example:
@@ -96,7 +107,31 @@ For example:
 echo 'EC2_INIT_MODULES="ssh"' > /etc/conf.d/ec2-init
 ```
 
-Below is the list of all varaibles you can set.
+## Systemd
+
+Edit service unit file `/etc/systemd/system/ec2-init.service`.
+
+Add environment variables in `[Service]` section, for example:
+
+```ini
+[Unit]
+Description=EC2 Init
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/ec2-init
+Environment="EC2_INIT_MODULES=ssh"
+
+[Install]
+WantedBy=multi-user.target
+```
+
+And then reload systemd: `systemctl daemon-reload`.
+
+## Variables
+
+Below is the list of all variables you can set.
 
 | Name                   | Default                           | Description                  |
 |------------------------|-----------------------------------|------------------------------|
@@ -112,7 +147,7 @@ Below is the list of all varaibles you can set.
 
 Would like to cleanup created by `ec2-init` files?
 
-```sh
+```shell
 rm /var/log/ec2-init.* /var/lib/ec2-init.*
 ```
 

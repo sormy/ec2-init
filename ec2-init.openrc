@@ -1,0 +1,114 @@
+#!/sbin/openrc-run
+
+# Author:  Artem Butusov <art.sormy@gmail.com>
+# License: MIT
+# Version: 1.0.1
+# https://github.com/sormy/ec2-init
+
+# shellcheck shell=sh
+# shellcheck disable=SC2129
+
+EC2_META_DATA_URL="http://169.254.169.254/latest/meta-data"
+EC2_USER_DATA_URL="http://169.254.169.254/latest/user-data"
+
+EC2_INIT_MODULES="${EC2_INIT_MODULES:-hostname ssh exec}"
+
+EC2_INIT_LOCK="${EC2_INIT_LOCK:-/var/lib/ec2-init.lock}"
+EC2_INIT_LOG="${EC2_INIT_LOG:-/var/log/ec2-init.log}"
+EC2_INIT_USER_DATA="${EC2_INIT_USER_DATA:-/var/lib/ec2-init.user-data}"
+
+CURL="${CURL:-curl --silent --max-time 1 --fail}"
+
+depend() {
+    before hostname
+    need net.eth0
+}
+
+start() {
+    instance_id=$($CURL "$EC2_META_DATA_URL/instance-id")
+
+    [ -f "$EC2_INIT_LOCK" ] && [ "$(cat "$EC2_INIT_LOCK")" = "$instance_id" ] && exit 0
+
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    einfo "Initializing EC2 instance ..."
+
+    echo "Initialiazing EC2 instance $instance_id at $timestamp" > "$EC2_INIT_LOG"
+
+    eindent
+    echo "$EC2_INIT_MODULES" | grep -q '\bhostname\b' && init_hostname
+    echo "$EC2_INIT_MODULES" | grep -q '\bssh\b' && init_ssh
+    echo "$EC2_INIT_MODULES" | grep -q '\bexec\b' && init_exec "$instance_id"
+    eoutdent
+
+    echo "$instance_id" > "$EC2_INIT_LOCK"
+
+    chmod o-rwx "$EC2_INIT_LOCK" "$EC2_INIT_LOG"
+}
+
+init_hostname() {
+    ebegin "Setting up hostname"
+
+    hostname=$($CURL "$EC2_META_DATA_URL/local-hostname")
+
+    echo "Setting up hostname: $hostname" >> "$EC2_INIT_LOG"
+
+    echo "hostname=$hostname" > /etc/conf.d/hostname
+
+    eend $?
+}
+
+init_ssh() {
+    ebegin "Setting up SSH"
+
+    ssh_user_name="${SSH_USER_NAME:-$(whoami)}"
+    ssh_user_home="${SSH_USER_HOME:-$(user_home "$ssh_user_name")}"
+
+    ssh_conf_home="$ssh_user_home/.ssh"
+
+    echo "Setting up SSH in $ssh_conf_home" >> "$EC2_INIT_LOG"
+
+    [ -e "$ssh_conf_home" ] && rm -rf "$ssh_conf_home"
+    mkdir -p "$ssh_conf_home"
+    chown "$ssh_user_name:$ssh_user_name" "$ssh_conf_home"
+    chmod 750 "$ssh_conf_home"
+
+    $CURL "$EC2_META_DATA_URL/public-keys" \
+        | cut -d = -f 1 \
+        | xargs printf "$EC2_META_DATA_URL/public-keys/%s/openssh-key\n" \
+        | xargs $CURL \
+        > "$ssh_conf_home/authorized_keys"
+
+    result=$?
+
+    chown "$ssh_user_name:$ssh_user_name" "$ssh_conf_home/authorized_keys"
+    chmod 640 "$ssh_conf_home/authorized_keys"
+
+    eend $result
+}
+
+init_exec() {
+    instance_id="$1"
+
+    ebegin "Executing user script"
+
+    $CURL "$EC2_USER_DATA_URL" > "$EC2_INIT_USER_DATA"
+    chmod o-rwx "$EC2_INIT_USER_DATA"
+
+    if [ "$(sed -n '/^#!/p;q' "$EC2_INIT_USER_DATA")" != "" ]; then
+        echo "Executing user script" >> "$EC2_INIT_LOG"
+        echo "---" >> "$EC2_INIT_LOG"
+        sh "$EC2_INIT_USER_DATA" >> "$EC2_INIT_LOG" 2>&1
+        result=$?
+        echo "---" >> "$EC2_INIT_LOG"
+    else
+        result=1
+        echo "Unable to execute user script due to missing shebang" >> "$EC2_INIT_LOG"
+    fi
+
+    eend $result
+}
+
+user_home() {
+    grep '^'"$1"':' /etc/passwd | cut -d : -f 6
+}
