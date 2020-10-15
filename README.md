@@ -30,9 +30,9 @@ rc-update add ec2-init boot
 ### Systemd
 
 ```shell
-curl -s https://raw.githubusercontent.com/sormy/ec2-init/master/ec2-init.script /usr/sbin/ec2-init
+curl -s https://raw.githubusercontent.com/sormy/ec2-init/master/ec2-init.script -o /usr/sbin/ec2-init
 chmod +x /usr/sbin/ec2-init
-curl -s https://raw.githubusercontent.com/sormy/ec2-init/master/ec2-init.service /etc/systemd/system/ec2-init.service
+curl -s https://raw.githubusercontent.com/sormy/ec2-init/master/ec2-init.service -o /etc/systemd/system/ec2-init.service
 systemctl enable ec2-init
 ```
 
