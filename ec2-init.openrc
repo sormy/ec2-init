@@ -2,7 +2,7 @@
 
 # Author:  Artem Butusov <art.sormy@gmail.com>
 # License: MIT
-# Version: 1.0.1
+# Version: 1.0.2
 # https://github.com/sormy/ec2-init
 
 # shellcheck shell=sh
@@ -17,7 +17,7 @@ EC2_INIT_LOCK="${EC2_INIT_LOCK:-/var/lib/ec2-init.lock}"
 EC2_INIT_LOG="${EC2_INIT_LOG:-/var/log/ec2-init.log}"
 EC2_INIT_USER_DATA="${EC2_INIT_USER_DATA:-/var/lib/ec2-init.user-data}"
 
-CURL="${CURL:-curl --silent --max-time 1 --fail}"
+CURL="${CURL:-curl --silent --max-time 5 --fail}"
 
 depend() {
     before hostname
@@ -26,6 +26,12 @@ depend() {
 
 start() {
     instance_id=$($CURL "$EC2_META_DATA_URL/instance-id")
+
+    if [ "$instance_id" = "" ]; then
+        echo "Unable to obtain EC2 instance ID"
+        echo "Unable to obtain EC2 instance ID" >> "$EC2_INIT_LOG"
+        return 1
+    fi
 
     [ -f "$EC2_INIT_LOCK" ] && [ "$(cat "$EC2_INIT_LOCK")" = "$instance_id" ] && exit 0
 
@@ -95,7 +101,10 @@ init_exec() {
     $CURL "$EC2_USER_DATA_URL" > "$EC2_INIT_USER_DATA"
     chmod o-rwx "$EC2_INIT_USER_DATA"
 
-    if [ "$(sed -n '/^#!/p;q' "$EC2_INIT_USER_DATA")" != "" ]; then
+    if [ "$(stat --printf="%s" "$EC2_INIT_USER_DATA")" = 0 ]; then
+        echo "User script is blank"
+        echo "User script is blank" >> "$EC2_INIT_LOG"
+    elif [ "$(sed -n '/^#!/p;q' "$EC2_INIT_USER_DATA")" != "" ]; then
         echo "Executing user script" >> "$EC2_INIT_LOG"
         echo "---" >> "$EC2_INIT_LOG"
         sh "$EC2_INIT_USER_DATA" >> "$EC2_INIT_LOG" 2>&1
@@ -103,6 +112,7 @@ init_exec() {
         echo "---" >> "$EC2_INIT_LOG"
     else
         result=1
+        echo "Unable to execute user script due to missing shebang"
         echo "Unable to execute user script due to missing shebang" >> "$EC2_INIT_LOG"
     fi
 
