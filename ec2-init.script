@@ -17,7 +17,7 @@ EC2_INIT_LOCK="${EC2_INIT_LOCK:-/var/lib/ec2-init.lock}"
 EC2_INIT_LOG="${EC2_INIT_LOG:-/var/log/ec2-init.log}"
 EC2_INIT_USER_DATA="${EC2_INIT_USER_DATA:-/var/lib/ec2-init.user-data}"
 
-CURL="${CURL:-curl --silent --max-time 5 --fail}"
+CURL="${CURL:-curl --silent --max-time 1 --retry 3 --fail}"
 
 start() {
     instance_id=$($CURL "$EC2_META_DATA_URL/instance-id")
