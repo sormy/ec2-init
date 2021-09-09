@@ -10,6 +10,7 @@ After=network.target
 [Service]
 Type=oneshot
 ExecStart=/usr/sbin/ec2-init
+StandardOutput=journal+console
 
 [Install]
 WantedBy=multi-user.target
