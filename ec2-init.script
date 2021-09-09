@@ -43,7 +43,12 @@ start() {
 
     echo "$instance_id" > "$EC2_INIT_LOCK"
 
-    chmod o-rwx "$EC2_INIT_LOCK" "$EC2_INIT_LOG"
+    chmod o-rwx "$EC2_INIT_LOCK"
+
+    case "$EC2_INIT_LOG" in
+        /dev/*) ;;
+        *) chmod o-rwx "$EC2_INIT_LOG";;
+    esac
 }
 
 init_hostname() {
