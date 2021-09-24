@@ -2,7 +2,7 @@
 
 # Author:  Artem Butusov <art.sormy@gmail.com>
 # License: MIT
-# Version: 1.0.3
+# Version: 1.0.4
 # https://github.com/sormy/ec2-init
 
 # shellcheck shell=sh
@@ -17,7 +17,7 @@ EC2_INIT_LOCK="${EC2_INIT_LOCK:-/var/lib/ec2-init.lock}"
 EC2_INIT_LOG="${EC2_INIT_LOG:-/var/log/ec2-init.log}"
 EC2_INIT_USER_DATA="${EC2_INIT_USER_DATA:-/var/lib/ec2-init.user-data}"
 
-CURL="${CURL:-curl --silent --max-time 1 --retry 3 --fail}"
+CURL="${CURL:-curl --silent --max-time 1 --retry-delay 1 --retry 10 --retry-all-errors --fail}"
 
 depend() {
     before hostname
@@ -25,21 +25,27 @@ depend() {
 }
 
 start() {
+    einfo "Running EC2 initialization ..."
+    echo "Running EC2 initialization" > "$EC2_INIT_LOG"
+
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    echo "Start time: $timestamp" >> "$EC2_INIT_LOG"
+
     instance_id=$($CURL "$EC2_META_DATA_URL/instance-id")
 
     if [ "$instance_id" = "" ]; then
-        echo "Unable to obtain EC2 instance ID"
-        echo "Unable to obtain EC2 instance ID" >> "$EC2_INIT_LOG"
+        eerror "Unable to obtain EC2 metadata"
+        echo "Unable to obtain EC2 metadata" >> "$EC2_INIT_LOG"
         return 1
     fi
 
-    [ -f "$EC2_INIT_LOCK" ] && [ "$(cat "$EC2_INIT_LOCK")" = "$instance_id" ] && exit 0
+    echo "Discovered EC2 instance ID: $instance_id" >> "$EC2_INIT_LOG"
 
-    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-    einfo "Initializing EC2 instance ..."
-
-    echo "Initialiazing EC2 instance $instance_id at $timestamp" > "$EC2_INIT_LOG"
+    if [ -f "$EC2_INIT_LOCK" ] && [ "$(cat "$EC2_INIT_LOCK")" = "$instance_id" ]; then
+        einfo "EC2 initialization is already completed"
+        echo "EC2 initialization is already completed" > "$EC2_INIT_LOG"
+        return 0
+    fi
 
     eindent
     echo "$EC2_INIT_MODULES" | grep -q '\bhostname\b' && init_hostname
@@ -48,16 +54,23 @@ start() {
     eoutdent
 
     echo "$instance_id" > "$EC2_INIT_LOCK"
+    chmod o-rwx "$EC2_INIT_LOCK"
 
-    chmod o-rwx "$EC2_INIT_LOCK" "$EC2_INIT_LOG"
+    chmod o-rwx "$EC2_INIT_LOG"
+
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    echo "End time: $timestamp" >> "$EC2_INIT_LOG"
+
+    einfo "EC2 initialization is completed"
+    echo "EC2 initialization is completed" >> "$EC2_INIT_LOG"
 }
 
 init_hostname() {
     ebegin "Setting up hostname"
+    echo "Setting up hostname" >> "$EC2_INIT_LOG"
 
     hostname=$($CURL "$EC2_META_DATA_URL/local-hostname")
-
-    echo "Setting up hostname: $hostname" >> "$EC2_INIT_LOG"
+    echo "Discovered hostname: $hostname" >> "$EC2_INIT_LOG"
 
     echo "hostname=$hostname" > /etc/conf.d/hostname
 
@@ -66,13 +79,14 @@ init_hostname() {
 
 init_ssh() {
     ebegin "Setting up SSH"
+    echo "Setting up SSH" >> "$EC2_INIT_LOG"
 
     ssh_user_name="${SSH_USER_NAME:-$(whoami)}"
     ssh_user_home="${SSH_USER_HOME:-$(user_home "$ssh_user_name")}"
 
     ssh_conf_home="$ssh_user_home/.ssh"
 
-    echo "Setting up SSH in $ssh_conf_home" >> "$EC2_INIT_LOG"
+    echo "Loading SSH authorized keys to $ssh_conf_home" >> "$EC2_INIT_LOG"
 
     [ -e "$ssh_conf_home" ] && rm -rf "$ssh_conf_home"
     mkdir -p "$ssh_conf_home"
@@ -97,28 +111,27 @@ init_exec() {
     instance_id="$1"
 
     ebegin "Executing user script"
+    echo "Executing user script" >> "$EC2_INIT_LOG"
 
     $CURL "$EC2_USER_DATA_URL" > "$EC2_INIT_USER_DATA"
     chmod o-rwx "$EC2_INIT_USER_DATA"
 
     if [ "$(stat --printf="%s" "$EC2_INIT_USER_DATA")" = 0 ]; then
-        echo "User script is blank"
-        echo "User script is blank" >> "$EC2_INIT_LOG"
+        echo "User script is empty, nothing to execute" >> "$EC2_INIT_LOG"
     elif [ "$(sed -n '/^#!/p;q' "$EC2_INIT_USER_DATA")" != "" ]; then
-        echo "Executing user script" >> "$EC2_INIT_LOG"
+        echo "User script output:" >> "$EC2_INIT_LOG"
         echo "---" >> "$EC2_INIT_LOG"
         sh "$EC2_INIT_USER_DATA" >> "$EC2_INIT_LOG" 2>&1
         result=$?
         echo "---" >> "$EC2_INIT_LOG"
     else
         result=1
-        echo "Unable to execute user script due to missing shebang"
-        echo "Unable to execute user script due to missing shebang" >> "$EC2_INIT_LOG"
+        echo "User script has missing shebang" >> "$EC2_INIT_LOG"
     fi
 
     eend $result
 }
 
 user_home() {
-    grep '^'"$1"':' /etc/passwd | cut -d : -f 6
+    grep "^$1:" /etc/passwd | cut -d : -f 6
 }

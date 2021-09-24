@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# Author:  Artem Butusov <art.sormy@gmail.com>
+# License: MIT
+# Version: 1.0.4
+# https://github.com/sormy/ec2-init
+
+if /usr/sbin/ec2-init; then
+    sv down ec2-init
+fi
