@@ -5,11 +5,16 @@
 
 [Unit]
 Description=EC2 Init
-After=network.target
+After=network-online.target
 
 [Service]
-Type=oneshot
-ExecStart=/usr/sbin/ec2-init
+Type=simple
+Restart=on-failure
+RestartSec=10s
+
+ExecStartPre=/usr/sbin/ec2-init
+ExecStart=/usr/bin/true
+
 StandardOutput=journal+console
 
 [Install]
