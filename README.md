@@ -123,9 +123,6 @@ The output of executed shell script is also logged to `/var/log/ec2-init.log`.
 Needed to programmatically initialize EC2 instance using customizable instance
 provisioning shell script.
 
-Currently script assumes that IMDSv1 is used (IMDSv2 is not supported at this
-time).
-
 Read more about EC2 instance user data:
 <https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-add-user-data.html>
 
